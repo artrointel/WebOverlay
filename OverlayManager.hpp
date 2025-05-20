@@ -8,6 +8,7 @@
 #include <shlwapi.h>
 #include <iostream>
 #include <algorithm>
+#include <filesystem>
 #include "String.hpp"
 #include "Log.hpp"
 #include <mutex>
@@ -33,25 +34,43 @@ public:
     }
 
     void initializeWebView() {
-        CreateCoreWebView2Environment(
+        std::wstring fixedRuntimePath = L"WebView2";
+        Microsoft::WRL::ComPtr<ICoreWebView2EnvironmentOptions> options;
+        CreateCoreWebView2EnvironmentWithOptions(
+            fixedRuntimePath.c_str(),   // browserExecutableFolder
+            nullptr,                    // userDataFolder (기본 null)
+            nullptr,                    // environmentOptions (추가 옵션 없음)
             Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
                 [this](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+                    if (FAILED(result) || !env)
+                        return result;
+
                     env->CreateCoreWebView2Controller(
                         hwnd,
                         Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                             [this](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
-                                if (controller) {
-                                    webviewController = controller;
-                                    controller->get_CoreWebView2(&webviewWindow);
+                                if (FAILED(result) || !controller)
+                                    return result;
+
+                                webviewController = controller;
+                                controller->get_CoreWebView2(&webviewWindow);
+                                Microsoft::WRL::ComPtr<ICoreWebView2Controller2> controller2;
+                                if (SUCCEEDED(controller->QueryInterface(IID_PPV_ARGS(&controller2)))) {
+                                    // 투명한 배경 지정
+                                    controller2->put_DefaultBackgroundColor({ 0, 0, 0, 0 });
                                 }
+                                
                                 RECT bounds;
                                 GetClientRect(hwnd, &bounds);
                                 webviewController->put_Bounds(bounds);
+                                
                                 std::wstring url = getHtmlUrl();
-                                Log::d("OverlayManager", "Navigate URL", WStringToString(url));
+                                Log::d("OverlayManager", "Navigate URL: ", WStringToString(url));
                                 webviewWindow->Navigate(url.c_str());
+                                
                                 return S_OK;
                             }).Get());
+
                     return S_OK;
                 }).Get());
     }
@@ -146,19 +165,23 @@ private:
 
     std::wstring getHtmlUrl() {
         wchar_t exePath[MAX_PATH];
-        GetModuleFileName(nullptr, exePath, MAX_PATH);
-        PathRemoveFileSpec(exePath);
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
 
-        wchar_t fullPath[MAX_PATH];
-        PathCombineW(fullPath, exePath, L"..\\..\\pages\\event_checker\\index.html");
+        // 실행 파일의 디렉토리 경로
+        std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
 
-        if (!PathFileExistsW(fullPath)) {
+        // pages/event_checker/index.html 상대 경로 기준
+        std::filesystem::path htmlPath = exeDir / L"pages\\event_checker\\index.html";
+        htmlPath = std::filesystem::weakly_canonical(htmlPath);  // .. 정리
+
+        if (!std::filesystem::exists(htmlPath)) {
             std::wostringstream oss;
-            oss << L"index.html does not exist. Path was: " << fullPath;
+            oss << L"index.html does not exist. Path was: " << htmlPath;
             Log::e("OverlayManager", WStringToString(oss.str()));
         }
 
-        std::wstring url = L"file:///" + std::wstring(fullPath);
+        // file:/// 형식으로 변환
+        std::wstring url = L"file:///" + htmlPath.wstring();
         std::replace(url.begin(), url.end(), L'\\', L'/');
         return url;
     }
