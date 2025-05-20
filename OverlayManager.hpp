@@ -34,43 +34,29 @@ public:
     }
 
     void initializeWebView() {
-        std::wstring fixedRuntimePath = L"WebView2";
-        Microsoft::WRL::ComPtr<ICoreWebView2EnvironmentOptions> options;
-        CreateCoreWebView2EnvironmentWithOptions(
-            fixedRuntimePath.c_str(),   // browserExecutableFolder
-            nullptr,                    // userDataFolder (기본 null)
-            nullptr,                    // environmentOptions (추가 옵션 없음)
+        CreateCoreWebView2Environment(
             Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
                 [this](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
-                    if (FAILED(result) || !env)
-                        return result;
-
                     env->CreateCoreWebView2Controller(
                         hwnd,
                         Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                             [this](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
-                                if (FAILED(result) || !controller)
-                                    return result;
-
-                                webviewController = controller;
-                                controller->get_CoreWebView2(&webviewWindow);
-                                Microsoft::WRL::ComPtr<ICoreWebView2Controller2> controller2;
-                                if (SUCCEEDED(controller->QueryInterface(IID_PPV_ARGS(&controller2)))) {
-                                    // 투명한 배경 지정
-                                    controller2->put_DefaultBackgroundColor({ 0, 0, 0, 0 });
+                                if (controller) {
+                                    webviewController = controller;
+                                    controller->get_CoreWebView2(&webviewWindow);
+                                    Microsoft::WRL::ComPtr<ICoreWebView2Controller2> controller2;
+                                    if (SUCCEEDED(controller->QueryInterface(IID_PPV_ARGS(&controller2)))) {
+                                        controller2->put_DefaultBackgroundColor({ 0, 0, 0, 0 });
+                                    }
                                 }
-                                
                                 RECT bounds;
                                 GetClientRect(hwnd, &bounds);
                                 webviewController->put_Bounds(bounds);
-                                
                                 std::wstring url = getHtmlUrl();
-                                Log::d("OverlayManager", "Navigate URL: ", WStringToString(url));
+                                Log::d("OverlayManager", "Navigate URL", WStringToString(url));
                                 webviewWindow->Navigate(url.c_str());
-                                
                                 return S_OK;
                             }).Get());
-
                     return S_OK;
                 }).Get());
     }
