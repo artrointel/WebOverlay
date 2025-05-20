@@ -24,6 +24,8 @@ using namespace std;
 
 class OverlayManager {
 public:
+    bool inputForwardingEnabled = false;
+
     OverlayManager(HWND hwnd) : hwnd(hwnd), visible(true), clickThrough(true) {}
     ~OverlayManager() {
         cancelOpacityThread.store(true);
@@ -63,6 +65,8 @@ public:
         cancelOpacityThread.store(false);
 
         opacityThread = std::thread(&OverlayManager::animateOpacity, this, visible ? 180 : 0);
+
+        inputForwardingEnabled = visible;
     }
 
     void toggleClickThrough() {
@@ -74,6 +78,25 @@ public:
         applyClickThrough();
     }
 
+    void dispatchKeyEventToWeb(UINT modifiers, const std::wstring& key) {
+        if (!webviewWindow.Get()) return;
+
+        bool ctrl = modifiers & MOD_CONTROL;
+        bool shift = modifiers & MOD_SHIFT;
+        bool alt = modifiers & MOD_ALT;
+        bool win = modifiers & MOD_WIN;
+
+        std::wostringstream script;
+        script << L"window.dispatchEvent(new KeyboardEvent('keydown', { "
+            << L"key: '" << escapeForJS(key) << L"', "
+            << L"ctrlKey: " << (ctrl ? L"true" : L"false") << L", "
+            << L"shiftKey: " << (shift ? L"true" : L"false") << L", "
+            << L"altKey: " << (alt ? L"true" : L"false") << L", "
+            << L"metaKey: " << (win ? L"true" : L"false")
+            << L" }));";
+
+        webviewWindow->ExecuteScript(script.str().c_str(), nullptr);
+    }
 private:
     HWND hwnd;
     std::atomic<bool> cancelOpacityThread{ false };
@@ -112,13 +135,22 @@ private:
         }
     }
 
+    std::wstring escapeForJS(const std::wstring& input) {
+        std::wostringstream oss;
+        for (wchar_t c : input) {
+            if (c == L'\\' || c == L'\'') oss << L'\\';
+            oss << c;
+        }
+        return oss.str();
+    }
+
     std::wstring getHtmlUrl() {
         wchar_t exePath[MAX_PATH];
         GetModuleFileName(nullptr, exePath, MAX_PATH);
         PathRemoveFileSpec(exePath);
 
         wchar_t fullPath[MAX_PATH];
-        PathCombineW(fullPath, exePath, L"..\\..\\resources\\index.html");
+        PathCombineW(fullPath, exePath, L"..\\..\\pages\\event_checker\\index.html");
 
         if (!PathFileExistsW(fullPath)) {
             std::wostringstream oss;

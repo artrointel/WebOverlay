@@ -54,7 +54,7 @@ private:
             WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TRANSPARENT,
             L"WebView2Overlay", L"WebOverlay",
             WS_POPUP,
-            100, 100, 800, 600, // TODO make ini
+            0, 0, 500, 600, // TODO make ini
             nullptr, nullptr, hInstance, this
         );
         SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)this);
@@ -63,13 +63,26 @@ private:
     }
 
     void registerHotKeys() {
-        shortcutManager.registerHotKey(hwnd, 1, MOD_CONTROL, VK_OEM_3, [this]() { overlayManager->toggleOverlay(); });
-        shortcutManager.registerHotKey(hwnd, 2, MOD_CONTROL, '1', [this]() { overlayManager->toggleClickThrough(); });
-        shortcutManager.registerHotKey(hwnd, 3, MOD_CONTROL, VK_F1, []() {
+        shortcutManager.registerHotKey(hwnd, 1, MOD_CONTROL, VK_OEM_3, [this](UINT mod, UINT vk) { overlayManager->toggleOverlay(); });
+        shortcutManager.registerHotKey(hwnd, 2, MOD_CONTROL, VK_F1, [this](UINT mod, UINT vk) { overlayManager->toggleClickThrough(); });
+        shortcutManager.registerHotKey(hwnd, 3, MOD_CONTROL, VK_F12, [](UINT mod, UINT vk) {
             static bool visible = true;
             visible = !visible;
             ShowWindow(GetConsoleWindow(), visible ? SW_SHOW : SW_HIDE);
-            });
+        });
+
+        // Key event to Web
+        for (int i = 1; i <= 5; ++i) {
+            shortcutManager.registerHotKey(
+                hwnd, i + 3, MOD_CONTROL, '0' + i,
+                [this, i](UINT mod, UINT vk) {
+                    overlayManager->dispatchKeyEventToWeb(mod, StringToWString(getKeyName(vk)));
+                },
+                [this]() {
+                    return true;
+                }
+            );
+        }
     }
 
     void messageLoop() {
